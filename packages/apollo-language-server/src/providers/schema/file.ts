@@ -1,12 +1,19 @@
 // FileSchemaProvider (FileProvider (SDL || IntrospectionResult) => schema)
-import { GraphQLSchema, buildClientSchema, Source, buildSchema } from "graphql";
+import {
+  GraphQLSchema,
+  buildClientSchema,
+  Source,
+  buildSchema,
+  printSchema
+} from "graphql";
 import { readFileSync } from "fs";
 import { extname, resolve } from "path";
 import { GraphQLSchemaProvider, SchemaChangeUnsubscribeHandler } from "./base";
 import { NotificationHandler } from "vscode-languageserver";
 
 export interface FileSchemaProviderConfig {
-  path: string;
+  path?: string;
+  paths?: string[];
 }
 // XXX file subscription
 export class FileSchemaProvider implements GraphQLSchemaProvider {
@@ -16,7 +23,30 @@ export class FileSchemaProvider implements GraphQLSchemaProvider {
 
   async resolveSchema() {
     if (this.schema) return this.schema;
-    const { path } = this.config;
+    const { path, paths } = this.config;
+
+    // load each path and get sdl string from each, if a list, concatenate them all
+    const sdlResults = path
+      ? this.loadFileAndGetSDL(path)
+      : paths
+      ? paths.map(this.loadFileAndGetSDL).join("\n")
+      : undefined;
+
+    if (!sdlResults)
+      throw new Error(
+        `Schema could not be loaded for [${
+          path ? path : paths ? paths.join(", ") : "undefined"
+        }]`
+      );
+
+    this.schema = buildSchema(sdlResults);
+
+    if (!this.schema) throw new Error(`Schema could not be loaded for ${path}`);
+    return this.schema;
+  }
+
+  // load a graphql file or introspection result and return the SDL version
+  loadFileAndGetSDL(path: string) {
     let result;
     try {
       result = readFileSync(path, {
@@ -28,7 +58,7 @@ export class FileSchemaProvider implements GraphQLSchemaProvider {
 
     const ext = extname(path);
 
-    // an actual introspectionQuery result
+    // an actual introspectionQuery result, convert to sdl
     if (ext === ".json") {
       const parsed = JSON.parse(result);
       const __schema = parsed.data
@@ -37,13 +67,14 @@ export class FileSchemaProvider implements GraphQLSchemaProvider {
         ? parsed.__schema
         : parsed;
 
-      this.schema = buildClientSchema({ __schema });
+      const schema = buildClientSchema({ __schema });
+      return printSchema(schema);
     } else if (ext === ".graphql" || ext === ".graphqls" || ext === ".gql") {
-      const uri = `file://${resolve(path)}`;
-      this.schema = buildSchema(new Source(result, uri));
+      return result;
     }
-    if (!this.schema) throw new Error(`Schema could not be loaded for ${path}`);
-    return this.schema;
+    throw new Error(
+      "File Type not supported for schema loading. Must be a .json, .graphql, .gql, or .graphqls file"
+    );
   }
 
   onSchemaChange(
