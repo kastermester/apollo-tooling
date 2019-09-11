@@ -8,11 +8,21 @@ orbs:
   oss: apollo/oss-ci-cd-tooling@0.0.5
 
 commands:
-# These are the steps used for each version of Node which we're testing
-# against.  Thanks to YAMLs inability to merge arrays (though it is able
-# to merge objects), every version of Node must use the exact same steps,
-# or these steps would need to be repeated in a version of Node that needs
-# something different.  Probably best to avoid that, out of principle, though.
+  skip_when_no_api_key:
+    description: Exit successfully when no CHECKS_API_KEY is found
+    steps:
+      - run:
+          name: Skip if no CHECKS_API_KEY
+          command: |
+            if [ -z "$CHECKS_API_KEY" ]; then
+              echo "NO CHECKS_API_KEY! CANNOT RUN! This is normal on PRs from Forks."
+              exit 0 # i.e. pass tests.
+            fi
+  # These are the steps used for each version of Node which we're testing
+  # against.  Thanks to YAMLs inability to merge arrays (though it is able
+  # to merge objects), every version of Node must use the exact same steps,
+  # or these steps would need to be repeated in a version of Node that needs
+  # something different.  Probably best to avoid that, out of principle, though.
   common_test_steps:
     description: Commands to run on every Node.js environment
     steps:
@@ -26,12 +36,12 @@ commands:
 jobs:
   # Platform tests, each with the same tests but different platform or version.
   NodeJS 8:
-    executor: { name: oss/node, tag: '8' }
+    executor: { name: oss/node, tag: "8" }
     steps:
       - common_test_steps
 
   NodeJS 10:
-    executor: { name: oss/node, tag: '10' }
+    executor: { name: oss/node, tag: "10" }
     steps:
       - common_test_steps
       # We will save the results of this one particular invocation to use in
@@ -75,6 +85,7 @@ jobs:
   Query Check:
     executor: { name: oss/node }
     steps:
+      - skip_when_no_api_key
       - oss/install_specific_npm_version
       - checkout
       - oss/npm_clean_install_with_caching
@@ -83,6 +94,7 @@ jobs:
   Generated Types Check:
     executor: { name: oss/node }
     steps:
+      - skip_when_no_api_key
       - oss/install_specific_npm_version
       - checkout
       - oss/npm_clean_install_with_caching
@@ -148,4 +160,3 @@ workflows:
           <<: *common_publish_filters
           requires:
             - Confirmation
-
